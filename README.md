@@ -1,13 +1,5 @@
 # ansible自動化設定包
 
-## st
-
-用於ST安裝部屬，預計涵蓋以下部分
-1. 檢查是否有必要套件
-2. 調整系統參數到Axway官方建議值
-3. 自動安裝ST、Edge
-4. 進行初始設定 (研究中)
-
 ## Ansible Installation
 
 There are three common ways to use or install Ansible on your control node:
@@ -244,3 +236,4 @@ ansible-playbook -i inventory playbooks/site.yml --extra-vars "@secrets.yml" --a
 
 ---
 Add more commands as needed for your workflow!
+
