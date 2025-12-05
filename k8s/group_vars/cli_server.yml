@@ -1,0 +1,26 @@
+---
+# Variables for Kubernetes CLI management server
+
+# Kubernetes cluster information (must match your k8s cluster)
+k8s_cluster_name: "my-k8s-cluster"
+k8s_api_server: "192.168.1.10:6443"  # Control plane node IP:port
+
+# kubectl version (should match or be compatible with cluster version)
+kubectl_version: "1.31.0"
+
+# Helm version (Kubernetes package manager)
+helm_version: "3.13.3"
+
+# Utilities to install
+cli_packages:
+  - git
+  - curl
+  - wget
+  - vim
+  - jq
+  - python3-pip
+  - bash-completion
+  - tar  # Required for extracting helm
+
+# User for kubectl access (usually devops or your admin user)
+k8s_admin_user: "devops"

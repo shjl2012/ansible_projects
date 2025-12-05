@@ -1,0 +1,22 @@
+---
+- name: Collect facts and write to separate files per host
+  hosts: 
+    - ST
+  gather_facts: yes
+  tasks:
+    - name: Write facts to /tmp/${hostname}_facts.json
+      delegate_to: localhost
+      ansible.builtin.copy:
+        content: "{{ hostvars[inventory_hostname] | to_nice_json }}"
+        dest: "./{{ inventory_hostname }}_facts.json"
+
+    - name: Write facts to /tmp/${hostname}_facts.yml
+      delegate_to: localhost
+      ansible.builtin.copy:
+        content: "{{ hostvars[inventory_hostname] | to_nice_yaml }}"
+        dest: "./{{ inventory_hostname }}_facts.yml"
+
+    - name: Display file location
+      delegate_to: localhost
+      ansible.builtin.debug:
+        msg: "Facts written to ./{{ inventory_hostname }}_facts.json and ./{{ inventory_hostname }}_facts.yml"

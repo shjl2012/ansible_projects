@@ -1,0 +1,54 @@
+---
+- name: NFS Server Setup
+  hosts: nfs_servers
+  become: true
+  tasks:
+    - name: Install NFS server packages
+      ansible.builtin.package:
+        name:
+          - nfs-utils
+          - rpcbind
+        state: present
+
+    - name: Ensure export folders exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0777'
+      loop: "{{ nfs_exports }}"
+
+    - name: Configure /etc/exports
+      ansible.builtin.template:
+        src: ../templates/exports.j2
+        dest: /etc/exports
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Export NFS shares
+      ansible.builtin.command: exportfs -ra
+
+    - name: Ensure NFS and rpcbind services are enabled and started
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop:
+        - nfs-server
+        - rpcbind
+
+    - name: Set NFS server performance tuning options
+      ansible.builtin.lineinfile:
+        path: /etc/nfs.conf
+        regexp: '^{{ item.key }}='
+        line: '{{ item.key }}={{ item.value }}'
+        create: yes
+      loop:
+        - { key: 'nfsd.threads', value: '16' }
+        # Add more tuning options as needed
+
+# Note: Adjust /etc/exports and /etc/nfs.conf as needed to match client mount options:
+#   async, actimeo=3, lookupcache=positive, nfsvers, rsize, wsize, hard, timeo=600, retrans=2, noresvport
+# Some options are client-side only, but server can be tuned for async, rsize/wsize, etc.

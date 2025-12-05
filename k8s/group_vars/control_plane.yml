@@ -1,0 +1,23 @@
+---
+# Variables specific to Kubernetes control plane nodes
+
+# Control plane specific settings
+is_control_plane: true
+
+# kubeadm init parameters
+kubeadm_init_extra_args: ""
+
+# API server specific settings
+api_server_port: 6443
+
+# etcd data directory
+etcd_data_dir: "/var/lib/etcd"
+
+# Control plane components
+install_components:
+  - kubeadm
+  - kubelet
+  - kubectl
+
+# Enable control plane node to schedule pods (set to true for single-node clusters)
+control_plane_schedulable: false

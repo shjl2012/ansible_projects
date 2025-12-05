@@ -1,0 +1,73 @@
+---
+- name: Join Worker Nodes to Kubernetes Cluster
+  hosts: worker_nodes
+
+  tasks:
+    - name: Check if node is already part of the cluster
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
+    - name: Read worker join command from local file
+      local_action:
+        module: slurp
+        src: /tmp/k8s-join-command.sh
+      register: join_command_file
+      become: no
+      when: not kubelet_conf.stat.exists
+
+    - name: Set join command as fact
+      set_fact:
+        worker_join_command: "{{ join_command_file.content | b64decode | trim }}"
+      when: not kubelet_conf.stat.exists
+
+    - name: Join worker node to cluster
+      command: "{{ worker_join_command }}"
+      register: join_result
+      when: not kubelet_conf.stat.exists
+
+    - name: Display join result
+      debug:
+        var: join_result.stdout_lines
+      when: join_result is changed
+
+    - name: Wait for node to be ready
+      pause:
+        seconds: 10
+      when: join_result is changed
+
+    - name: Display status
+      debug:
+        msg: "Worker node successfully joined the cluster"
+      when: join_result is changed
+
+- name: Verify Worker Nodes Joined
+  hosts: control_plane[0]
+
+  tasks:
+    - name: Get cluster nodes
+      command: kubectl get nodes -o wide
+      register: cluster_nodes
+      changed_when: false
+      become_user: devops
+
+    - name: Display all cluster nodes
+      debug:
+        var: cluster_nodes.stdout_lines
+
+    - name: Check node status
+      command: kubectl get nodes -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}'
+      register: node_status
+      changed_when: false
+      become_user: devops
+
+    - name: Display next steps
+      debug:
+        msg:
+          - "=== Worker Nodes Joined ==="
+          - "All worker nodes have been added to the cluster"
+          - "Note: Nodes will show 'NotReady' until a CNI plugin is installed"
+          - "Next steps:"
+          - "1. Install a CNI plugin (Calico, Flannel, Weave, etc.)"
+          - "2. Verify nodes are Ready: kubectl get nodes"
+          - "3. Configure storage (NFS, local-path, etc.)"

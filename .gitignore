@@ -1,0 +1,6 @@
+# Ignore all zip files in st/files directory
+st/files/*.zip
+st/files/*.txt
+
+# Ignore all png files in st directory
+st/*.png

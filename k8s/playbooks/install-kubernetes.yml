@@ -1,0 +1,57 @@
+---
+- name: Install Kubernetes Components
+  hosts: k8s_cluster
+
+  tasks:
+    - name: Add Kubernetes repository
+      yum_repository:
+        name: kubernetes
+        description: Kubernetes Repository
+        baseurl: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/rpm/"
+        enabled: yes
+        gpgcheck: yes
+        gpgkey: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/rpm/repodata/repomd.xml.key"
+        exclude:
+          - kubelet
+          - kubeadm
+          - kubectl
+          - cri-tools
+          - kubernetes-cni
+
+    - name: Install Kubernetes components on control plane
+      dnf:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+        disable_excludes: kubernetes
+      when: "'control_plane' in group_names"
+
+    - name: Install Kubernetes components on worker nodes
+      dnf:
+        name:
+          - kubelet
+          - kubeadm
+        state: present
+        disable_excludes: kubernetes
+      when: "'worker_nodes' in group_names"
+
+    - name: Enable kubelet service (will start after kubeadm init)
+      systemd:
+        name: kubelet
+        enabled: yes
+
+    - name: Hold Kubernetes packages at current version
+      command: dnf versionlock add kubelet kubeadm kubectl
+      changed_when: false
+      failed_when: false
+
+    - name: Verify Kubernetes installation
+      command: kubeadm version -o short
+      register: kubeadm_version
+      changed_when: false
+
+    - name: Display Kubernetes version
+      debug:
+        msg: "Installed Kubernetes version: {{ kubeadm_version.stdout }}"

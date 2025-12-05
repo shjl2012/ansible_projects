@@ -1,0 +1,173 @@
+---
+- name: Prepare Kubernetes Cluster Nodes
+  hosts: k8s_cluster
+
+  tasks:
+    # Install common packages
+    - name: Install common packages
+      dnf:
+        name: "{{ common_packages }}"
+        state: present
+
+    # Install conntrack (required by Kubernetes)
+    - name: Install conntrack
+      dnf:
+        name: conntrack-tools
+        state: present
+
+    # Disable swap (required for Kubernetes)
+    - name: Disable swap for current session
+      command: swapoff -a
+      changed_when: false
+
+    - name: Disable swap permanently
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+
+    # Configure SELinux
+    - name: Set SELinux to permissive mode
+      selinux:
+        policy: targeted
+        state: "{{ selinux_state }}"
+      when: ansible_selinux.status == "enabled"
+
+    # Load required kernel modules
+    - name: Load kernel modules for containerd
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+
+    - name: Ensure kernel modules load on boot
+      copy:
+        content: |
+          overlay
+          br_netfilter
+        dest: /etc/modules-load.d/k8s.conf
+        owner: root
+        group: root
+        mode: '0644'
+
+    # Configure sysctl parameters for Kubernetes (all nodes)
+    - name: Configure sysctl parameters for Kubernetes
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      loop:
+        - { name: net.bridge.bridge-nf-call-iptables, value: 1 }
+        - { name: net.bridge.bridge-nf-call-ip6tables, value: 1 }
+        - { name: net.ipv4.ip_forward, value: 1 }
+
+    # Configure Docker CE repository for containerd
+    - name: Download Docker CE repository file
+      get_url:
+        url: https://download.docker.com/linux/rhel/docker-ce.repo
+        dest: /etc/yum.repos.d/docker-ce.repo
+        mode: '0644'
+
+    # Install container runtime (containerd.io from Docker)
+    - name: Install containerd.io
+      dnf:
+        name:
+          - containerd.io
+          - container-selinux
+        state: present
+
+    - name: Create containerd config directory
+      file:
+        path: /etc/containerd
+        state: directory
+        mode: '0755'
+
+    - name: Check if containerd config exists
+      stat:
+        path: /etc/containerd/config.toml
+      register: containerd_config_stat
+
+    - name: Remove old containerd config if it exists
+      file:
+        path: /etc/containerd/config.toml
+        state: absent
+      when: containerd_config_stat.stat.exists
+
+    - name: Generate default containerd config
+      shell: containerd config default > /etc/containerd/config.toml
+      register: containerd_config_generated
+
+    - name: Configure containerd to use systemd cgroup driver
+      replace:
+        path: /etc/containerd/config.toml
+        regexp: 'SystemdCgroup = false'
+        replace: 'SystemdCgroup = true'
+
+    - name: Restart containerd
+      systemd:
+        name: containerd
+        enabled: yes
+        state: restarted
+
+    - name: Wait for containerd to be ready
+      wait_for:
+        path: /var/run/containerd/containerd.sock
+        timeout: 30
+
+    - name: Verify CRI runtime is working
+      command: crictl --runtime-endpoint unix:///var/run/containerd/containerd.sock version
+      register: crictl_version
+      changed_when: false
+      failed_when: "'RuntimeName:  containerd' not in crictl_version.stdout"
+
+    - name: Display CRI version
+      debug:
+        var: crictl_version.stdout_lines
+
+    # Configure firewall ports (commented out for Azure NSG)
+    # - name: Configure firewall for Kubernetes control plane
+    #   firewalld:
+    #     port: "{{ item }}"
+    #     permanent: yes
+    #     state: enabled
+    #     immediate: yes
+    #   loop:
+    #     - 6443/tcp      # Kubernetes API server
+    #     - 2379-2380/tcp # etcd server client API
+    #     - 10250/tcp     # Kubelet API
+    #     - 10259/tcp     # kube-scheduler
+    #     - 10257/tcp     # kube-controller-manager
+    #   when: "'control_plane' in group_names"
+
+    # - name: Configure firewall for Kubernetes worker nodes
+    #   firewalld:
+    #     port: "{{ item }}"
+    #     permanent: yes
+    #     state: enabled
+    #     immediate: yes
+    #   loop:
+    #     - 10250/tcp     # Kubelet API
+    #     - 30000-32767/tcp # NodePort Services
+    #   when: "'worker_nodes' in group_names"
+
+  handlers:
+    - name: restart containerd
+      systemd:
+        name: containerd
+        state: restarted
+
+# Worker-specific kernel parameters
+- name: Configure worker node kernel parameters
+  hosts: worker_nodes
+
+  tasks:
+    - name: Set Elasticsearch kernel parameter on worker nodes
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      loop: "{{ worker_kernel_parameters }}"

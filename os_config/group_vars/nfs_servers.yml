@@ -1,0 +1,5 @@
+---
+# NFS export folders and options for nfs_servers group
+nfs_exports:
+  - path: /stdata/PFST01
+    options: "*(rw,sync,no_root_squash,no_subtree_check)"

@@ -1,0 +1,83 @@
+---
+- name: Join Additional Control Plane Nodes
+  hosts: control_plane[1:]  # Skip the first control plane node
+
+  tasks:
+    - name: Check if node is already part of the cluster
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
+    - name: Read control plane join command from local file
+      local_action:
+        module: slurp
+        src: /tmp/k8s-cp-join-command.sh
+      register: cp_join_command_file
+      become: no
+      when: not kubelet_conf.stat.exists
+
+    - name: Set join command as fact
+      set_fact:
+        cp_join_command: "{{ cp_join_command_file.content | b64decode | trim }}"
+      when: not kubelet_conf.stat.exists
+
+    - name: Join control plane node to cluster
+      command: "{{ cp_join_command }}"
+      register: join_result
+      when: not kubelet_conf.stat.exists
+
+    - name: Display join result
+      debug:
+        var: join_result.stdout_lines
+      when: join_result is changed
+
+    - name: Create .kube directory for root user
+      file:
+        path: /root/.kube
+        state: directory
+        mode: '0755'
+      when: not kubelet_conf.stat.exists
+
+    - name: Copy admin.conf to root user's kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /root/.kube/config
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0600'
+      when: not kubelet_conf.stat.exists
+
+    - name: Create .kube directory for devops user
+      file:
+        path: /home/devops/.kube
+        state: directory
+        owner: devops
+        group: devops
+        mode: '0755'
+      when: not kubelet_conf.stat.exists
+
+    - name: Copy admin.conf to devops user's kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/devops/.kube/config
+        remote_src: yes
+        owner: devops
+        group: devops
+        mode: '0600'
+      when: not kubelet_conf.stat.exists
+
+    - name: Verify node joined cluster
+      command: kubectl get nodes
+      register: cluster_nodes
+      changed_when: false
+      become_user: devops
+
+    - name: Display cluster nodes
+      debug:
+        var: cluster_nodes.stdout_lines
+
+    - name: Display status
+      debug:
+        msg: "Control plane node successfully joined the cluster"
+      when: join_result is changed

@@ -1,0 +1,27 @@
+---
+# Variables specific to Kubernetes worker nodes
+
+# Worker node specific settings
+is_worker_node: true
+
+# Worker node components
+install_components:
+  - kubeadm
+  - kubelet
+
+# Kernel parameters for worker nodes
+worker_kernel_parameters:
+  - { name: vm.max_map_count, value: 262144 }  # Required for Elasticsearch
+
+# Worker node labels (optional, can be customized per node)
+node_labels: {}
+# Example:
+#   node-role.kubernetes.io/worker: "worker"
+#   environment: "production"
+
+# Worker node taints (optional, can be customized per node)
+node_taints: []
+# Example:
+#   - key: "workload"
+#     value: "database"
+#     effect: "NoSchedule"

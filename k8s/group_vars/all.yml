@@ -1,0 +1,58 @@
+---
+# Common variables for all Kubernetes cluster nodes
+
+# Kubernetes version
+kubernetes_version: "1.31"  # Latest stable version (requires containerd 1.6.34+ or 1.7.20+ or 2.0.0+)
+
+# Container runtime (containerd or cri-o)
+container_runtime: "containerd"
+
+# Pod network CIDR
+pod_network_cidr: "10.244.0.0/16"
+
+# Service CIDR
+service_cidr: "10.96.0.0/12"
+
+# Kubernetes API server advertise address (usually the control plane node IP)
+# This will be set per control plane node in host_vars or dynamically
+
+# CNI Plugin (calico, flannel, cilium, weave)
+cni_plugin: "cilium"
+
+# Cilium-specific configuration
+cilium_version: "1.18.4"  # Latest stable version (supports Kubernetes up to 1.32)
+cilium_operator_replicas: 2  # Number of cilium-operator replicas (HA)
+cilium_enable_ipv4: true
+cilium_enable_ipv6: false
+cilium_enable_hubble: true  # Enable Hubble for observability
+cilium_hubble_ui: true  # Enable Hubble UI
+cilium_tunnel_mode: "tunnel"  # tunnel (encapsulation) or native (direct routing) - for Cilium 1.15+ routingMode parameter
+cilium_enable_bandwidth_manager: true  # Enable bandwidth management
+cilium_enable_bbr: false  # Enable BBR congestion control (requires kernel 4.9+)
+cilium_enable_host_firewall: false  # Enable host firewall
+cilium_kube_proxy_replacement: "strict"  # strict/true = enable kube-proxy replacement, false/disabled = disable (Cilium 1.15+ uses true/false)
+
+# NTP server (use infrastructure server or external NTP)
+ntp_server: "192.168.1.100"  # Change to your NTP server IP
+
+# DNS server (use infrastructure server or external DNS)
+dns_server: "192.168.1.100"  # Change to your DNS server IP
+
+# NFS server for persistent storage (optional)
+nfs_server: "192.168.1.100"  # Change to your NFS server IP
+nfs_path: "/data/nfs/k8s-storage"
+
+# System packages required on all nodes
+common_packages:
+  - curl
+  - wget
+  - vim
+  - net-tools
+  - git
+  - python3-pip
+
+# Disable swap (required for Kubernetes)
+disable_swap: true
+
+# SELinux mode (permissive or disabled for Kubernetes)
+selinux_state: permissive

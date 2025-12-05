@@ -1,0 +1,46 @@
+---
+- name: Initial root setup (create devops user and configure sudo)
+  hosts: all
+  become: true
+  vars:
+    devops_user: devops
+  vars_files:
+    - ../secrets.yml
+  tasks:
+    - name: Ensure devops user exists
+      ansible.builtin.user:
+        name: "{{ devops_user }}"
+        state: present
+        shell: /bin/bash
+
+    - name: Set password for devops user
+      ansible.builtin.user:
+        name: "{{ devops_user }}"
+        password: "{{ devops_password | password_hash('sha512') }}"
+      no_log: true
+
+    - name: Allow devops to sudo without password
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ devops_user }}"
+        content: "{{ devops_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        owner: root
+        group: root
+        mode: '0440'
+
+- name: General OS Setup
+  hosts: all
+  become: true
+  become_user: devops
+  tasks:
+    - name: Set SELinux to permissive
+      ansible.posix.selinux:
+        policy: targeted
+        state: permissive
+
+    - name: Disable and stop firewalld
+      ansible.builtin.service:
+        name: firewalld
+        state: stopped
+        enabled: false
+
+

@@ -1,0 +1,8 @@
+---
+ansible-navigator:
+  playbook-artifact:
+    enable: false
+  execution-environment:
+    image: quay.io/ansible/ansible-runner
+    pull:
+      policy: missing

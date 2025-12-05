@@ -1,0 +1,233 @@
+---
+- name: Setup Kubernetes CLI Management Server
+  hosts: cli_server
+
+  tasks:
+    - name: Install required packages
+      dnf:
+        name: "{{ cli_packages }}"
+        state: present
+
+    - name: Add Kubernetes repository for kubectl
+      yum_repository:
+        name: kubernetes
+        description: Kubernetes Repository
+        baseurl: "https://pkgs.k8s.io/core:/stable:/v1.28/rpm/"
+        enabled: yes
+        gpgcheck: yes
+        gpgkey: "https://pkgs.k8s.io/core:/stable:/v1.28/rpm/repodata/repomd.xml.key"
+
+    - name: Install kubectl
+      dnf:
+        name: kubectl-{{ kubectl_version }}
+        state: present
+        disable_excludes: kubernetes
+
+    - name: Enable kubectl bash completion
+      lineinfile:
+        path: /home/{{ k8s_admin_user }}/.bashrc
+        line: "source <(kubectl completion bash)"
+        create: yes
+        owner: "{{ k8s_admin_user }}"
+        group: "{{ k8s_admin_user }}"
+
+    - name: Add kubectl alias to bashrc
+      lineinfile:
+        path: /home/{{ k8s_admin_user }}/.bashrc
+        line: "alias k=kubectl"
+        create: yes
+        owner: "{{ k8s_admin_user }}"
+        group: "{{ k8s_admin_user }}"
+
+    - name: Add kubectl completion for alias
+      lineinfile:
+        path: /home/{{ k8s_admin_user }}/.bashrc
+        line: "complete -o default -F __start_kubectl k"
+        create: yes
+        owner: "{{ k8s_admin_user }}"
+        group: "{{ k8s_admin_user }}"
+
+    - name: Create .kube directory for admin user
+      file:
+        path: /home/{{ k8s_admin_user }}/.kube
+        state: directory
+        owner: "{{ k8s_admin_user }}"
+        group: "{{ k8s_admin_user }}"
+        mode: '0755'
+
+    - name: Check if kubeconfig already exists
+      stat:
+        path: /home/{{ k8s_admin_user }}/.kube/config
+      register: kubeconfig_check
+
+    - name: Display kubeconfig setup instructions
+      debug:
+        msg:
+          - "=== Manual Step Required ==="
+          - "Copy the admin.conf from your Kubernetes control plane node:"
+          - ""
+          - "On control plane node, run:"
+          - "  sudo cat /etc/kubernetes/admin.conf"
+          - ""
+          - "Then on this CLI server, create the file:"
+          - "  vi /home/{{ k8s_admin_user }}/.kube/config"
+          - ""
+          - "Or use SCP to copy it:"
+          - "  scp root@{{ k8s_api_server.split(':')[0] }}:/etc/kubernetes/admin.conf /home/{{ k8s_admin_user }}/.kube/config"
+          - "  sudo chown {{ k8s_admin_user }}:{{ k8s_admin_user }} /home/{{ k8s_admin_user }}/.kube/config"
+          - "  chmod 600 /home/{{ k8s_admin_user }}/.kube/config"
+      when: not kubeconfig_check.stat.exists
+
+    - name: Install Helm
+      block:
+        - name: Download Helm
+          get_url:
+            url: "https://get.helm.sh/helm-v{{ helm_version }}-linux-amd64.tar.gz"
+            dest: /tmp/helm-v{{ helm_version }}-linux-amd64.tar.gz
+            mode: '0644'
+
+        - name: Extract Helm
+          unarchive:
+            src: /tmp/helm-v{{ helm_version }}-linux-amd64.tar.gz
+            dest: /tmp
+            remote_src: yes
+
+        - name: Copy helm binary to /usr/local/bin
+          copy:
+            src: /tmp/linux-amd64/helm
+            dest: /usr/local/bin/helm
+            remote_src: yes
+            owner: root
+            group: root
+            mode: '0755'
+
+        - name: Enable Helm bash completion
+          lineinfile:
+            path: /home/{{ k8s_admin_user }}/.bashrc
+            line: "source <(helm completion bash)"
+            create: yes
+            owner: "{{ k8s_admin_user }}"
+            group: "{{ k8s_admin_user }}"
+
+        - name: Verify Helm installation
+          command: helm version --short
+          register: helm_version_output
+          changed_when: false
+          failed_when: false
+
+    - name: Install Cilium CLI
+      block:
+        - name: Download Cilium CLI
+          get_url:
+            url: "https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz"
+            dest: /tmp/cilium-linux-amd64.tar.gz
+            mode: '0644'
+
+        - name: Extract Cilium CLI
+          unarchive:
+            src: /tmp/cilium-linux-amd64.tar.gz
+            dest: /usr/local/bin
+            remote_src: yes
+
+        - name: Make Cilium CLI executable
+          file:
+            path: /usr/local/bin/cilium
+            mode: '0755'
+
+        - name: Verify Cilium CLI installation
+          command: cilium version --client
+          register: cilium_version_output
+          changed_when: false
+          failed_when: false
+
+    - name: Verify kubectl installation
+      command: kubectl version --client
+      register: kubectl_version_output
+      changed_when: false
+      become_user: "{{ k8s_admin_user }}"
+      failed_when: false
+
+    - name: Display installed tools
+      debug:
+        msg:
+          - "=== Kubernetes CLI Server Setup Complete ==="
+          - ""
+          - "Installed tools:"
+          - "  - kubectl: {{ kubectl_version }}"
+          - "  - helm: {{ helm_version_output.stdout | default(helm_version) }}"
+          - "  - cilium CLI: {{ cilium_version_output.stdout | default('installed') }}"
+          - ""
+          - "User: {{ k8s_admin_user }}"
+          - "Kubeconfig: /home/{{ k8s_admin_user }}/.kube/config"
+          - ""
+          - "Useful aliases added to .bashrc:"
+          - "  k = kubectl"
+          - ""
+          - "Next steps:"
+          - "1. Copy the admin.conf from control plane to this server"
+          - "2. Test connection: kubectl get nodes"
+          - "3. Deploy apps with Helm: helm search hub <chart>"
+          - "4. Manage Cilium: cilium status"
+
+- name: Copy kubeconfig from control plane (if accessible)
+  hosts: cli_server
+
+  vars:
+    control_plane_host: "{{ groups['control_plane'][0] | default('') }}"
+
+  tasks:
+    - name: Check if we can access control plane from inventory
+      set_fact:
+        can_copy_kubeconfig: "{{ control_plane_host != '' }}"
+
+    - name: Fetch admin.conf from control plane
+      fetch:
+        src: /etc/kubernetes/admin.conf
+        dest: /tmp/admin.conf
+        flat: yes
+      delegate_to: "{{ control_plane_host }}"
+      when: can_copy_kubeconfig
+      run_once: yes
+
+    - name: Copy admin.conf to CLI server
+      copy:
+        src: /tmp/admin.conf
+        dest: /home/{{ k8s_admin_user }}/.kube/config
+        owner: "{{ k8s_admin_user }}"
+        group: "{{ k8s_admin_user }}"
+        mode: '0600'
+      when: can_copy_kubeconfig
+
+    - name: Remove temporary admin.conf
+      local_action:
+        module: file
+        path: /tmp/admin.conf
+        state: absent
+      become: no
+      when: can_copy_kubeconfig
+      run_once: yes
+
+    - name: Test kubectl connection
+      command: kubectl get nodes
+      register: kubectl_test
+      changed_when: false
+      become_user: "{{ k8s_admin_user }}"
+      when: can_copy_kubeconfig
+
+    - name: Display cluster nodes
+      debug:
+        var: kubectl_test.stdout_lines
+      when: can_copy_kubeconfig and kubectl_test is success
+
+    - name: Display manual setup instructions
+      debug:
+        msg:
+          - "=== Manual kubeconfig setup required ==="
+          - "Control plane not found in inventory or not accessible"
+          - ""
+          - "Manually copy kubeconfig:"
+          - "  scp {{ k8s_api_server.split(':')[0] }}:/etc/kubernetes/admin.conf /tmp/"
+          - "  sudo cp /tmp/admin.conf /home/{{ k8s_admin_user }}/.kube/config"
+          - "  sudo chown {{ k8s_admin_user }}:{{ k8s_admin_user }} /home/{{ k8s_admin_user }}/.kube/config"
+          - "  chmod 600 /home/{{ k8s_admin_user }}/.kube/config"
+      when: not can_copy_kubeconfig
